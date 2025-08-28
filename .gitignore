@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+*.pyc
+env/
+venv/
+.idea/
+.vscode/
+*.log
+*.sqlite3
+staticfiles/
+media/
+*.env
+uv.lock
+.python-version
+play.py

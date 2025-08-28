@@ -1,0 +1,18 @@
+[project]
+name = "py-dperf"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "huggingface-hub[cli]>=0.34.4",
+    "mlx>=0.28.0",
+    "mlx-lm==0.16.1",
+    "psutil>=7.0.0",
+    "py-cpuinfo>=9.0.0",
+]
+
+[project.optional-dependencies]
+cuda12 = ["cupy-cuda12x>=13.6.0"]
+cuda11 = ["cupy-cuda11x>=13.6.0"]
+rocm50 = ["cupy-rocm-5-0>=13.3.0"]

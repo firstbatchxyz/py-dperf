@@ -1,15 +1,18 @@
 from dataclasses import dataclass, field
 
-@dataclass 
+
+@dataclass
 class CPUTopology:
     packages: int = 1
     cores: int = 0
     threads: int = 0
 
+
 @dataclass
 class CPUClock:
-    base: float = 0.0 # MHz
-    max: float = 0.0 # MHz
+    base: float = 0.0  # MHz
+    max: float = 0.0  # MHz
+
 
 @dataclass
 class CPUFeatures:
@@ -18,6 +21,7 @@ class CPUFeatures:
     BF16: bool = False
     SSE: bool = False
 
+
 @dataclass
 class CPUCache:
     l1d: int = 0
@@ -25,7 +29,8 @@ class CPUCache:
     l2: int = 0
     l3: int = 0
 
-@dataclass 
+
+@dataclass
 class Stat:
     samples: int = 0
     min: float = 0.0
@@ -33,7 +38,8 @@ class Stat:
     p95: float = 0.0
     max: float = 0.0
     mean: float = 0.0
-    stddev: float = 0.0 
+    stddev: float = 0.0
+
 
 @dataclass
 class Benchmarks:
@@ -49,6 +55,7 @@ class Benchmarks:
     flops_i16: float = 0.0
     flops_i8: float = 0.0
 
+
 @dataclass
 class SystemMemory:
     can_swap: int = 0
@@ -62,17 +69,19 @@ class SystemMemory:
     cpu_rw_warm_bw: float = 0.0
     memcpy_delay: float = 0.0
 
+
 @dataclass
 class DiskInfo:
     read: float = 0.0
     write: float = 0.0
     random: float = 0.0
 
+
 @dataclass
 class CPUInfo:
     vendor: str = ""
     model: str = ""
-    arch: str = "" 
+    arch: str = ""
     topology: CPUTopology = field(default_factory=CPUTopology)
     clock: CPUClock = field(default_factory=CPUClock)
     cache: CPUCache = field(default_factory=CPUCache)
@@ -80,6 +89,7 @@ class CPUInfo:
     benchmarks: Benchmarks = field(default_factory=Benchmarks)
     memcpy_hot: float = 0.0
     memcpy_cold: float = 0.0
+
 
 @dataclass
 class GPUMemory:
@@ -93,17 +103,18 @@ class GPUMemory:
     vram_to_compute: float = 0.0
     unified_memory: bool = False
 
+
 @dataclass
 class GPUInfo:
-    name: str = None 
+    name: str = None
     memory: GPUMemory = field(default_factory=GPUMemory)
     benchmarks: Benchmarks = field(default_factory=Benchmarks)
+
 
 @dataclass
 class DeviceInfo:
     os: str = None
-    cpu: CPUInfo  = field(default_factory=CPUInfo)
-    gpu: GPUInfo  = field(default_factory=GPUInfo)
+    cpu: CPUInfo = field(default_factory=CPUInfo)
+    gpu: GPUInfo = field(default_factory=GPUInfo)
     disk: DiskInfo = field(default_factory=DiskInfo)
     memory: SystemMemory = field(default_factory=SystemMemory)
-    
