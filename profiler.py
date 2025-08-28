@@ -20,7 +20,7 @@ from cpuinfo import get_cpu_info
 
 from .datatypes import DeviceInfo
 from .parsers.mlx_deepseek import profile_model
-from src.utils.logger import logger
+#from src.utils.logger import logger
 
 try:
     import cupy as cp
