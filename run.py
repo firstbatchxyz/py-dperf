@@ -4,7 +4,7 @@ import inspect
 import importlib
 from dataclasses import asdict
 from argparse import ArgumentParser
-from profiler import profile_model, profile_device
+from src.profiler import profile_model, profile_device
 
 if __name__ == "__main__":
     parser = ArgumentParser()

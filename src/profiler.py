@@ -20,8 +20,8 @@ from typing import List, Dict
 from cpuinfo import get_cpu_info
 
 from dataclasses import asdict
-from datatypes import DeviceInfo
-from parsers.mlx_deepseek import _profile_model
+from src.datatypes import DeviceInfo
+from src.parsers.mlx_deepseek import _profile_model
 # from src.utils.logger import logger
 
 try:
