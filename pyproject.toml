@@ -1,7 +1,7 @@
 [project]
 name = "py-dperf"
 version = "0.1.0"
-description = "Add your description here"
+description = "Device profiler for MLX in Python"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
