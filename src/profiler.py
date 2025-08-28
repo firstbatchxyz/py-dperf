@@ -2,6 +2,7 @@ import os
 import sys
 import uuid
 import mmap
+import json
 import struct
 import psutil
 import pathlib
@@ -18,9 +19,9 @@ from typing import List, Dict
 
 from cpuinfo import get_cpu_info
 
-from .datatypes import DeviceInfo
-from .parsers.mlx_deepseek import profile_model
-
+from dataclasses import asdict
+from datatypes import DeviceInfo
+from parsers.mlx_deepseek import _profile_model
 # from src.utils.logger import logger
 
 try:
@@ -382,7 +383,7 @@ def metal_bench_mem_to_compute(di):
 
 
 # Aggregate info on the current system
-def profile_device() -> DeviceInfo:
+def profile() -> DeviceInfo:
     di = DeviceInfo()
     get_os(di)
     fill_cpu_info(di)
@@ -434,6 +435,54 @@ class DeviceProfileInfo:
     d_avail_cuda: float = 0.0
     d_avail_metal: float = 0.0
 
+    def json(self):
+        return json.dumps(asdict(self))
+
+# Get device information in solver variable names 
+def profile_device() -> DeviceProfileInfo:
+    device_info = profile()
+    ret = DeviceProfileInfo()
+    ret.c_cpu = 0
+    ret.c_gpu = 0
+    ret.s_disk = device_info.disk.random
+    ret.has_metal = True if device_info.gpu.name == "metal" else False
+    ret.is_unified_mem = ret.has_metal # No intel macbooks support for now 
+    ret.has_cuda = True if device_info.gpu.name == "cuda" else False
+    ret.os_type = device_info.os
+    ret.s_cpu = {
+        "f64": device_info.cpu.benchmarks.flops_f64,
+        "f32": device_info.cpu.benchmarks.flops_f32,
+        "fp16": device_info.cpu.benchmarks.flops_fp16,
+        "bf16": device_info.cpu.benchmarks.flops_bf16,
+    } 
+    ret.s_gpu = {
+        "f32": device_info.gpu.benchmarks.flops_f32,
+        "fp16": device_info.gpu.benchmarks.flops_fp16,
+        "bf16": device_info.gpu.benchmarks.flops_bf16,
+    }
+    # Estimate 2 reads + 1 write
+    ret.t_kv_cpy_cpu = device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
+    ret.t_kv_cpy_gpu = device_info.gpu.memory.two_read_one_write_bw
+    ret.tau_cpu = device_info.memory.cpu_read_warm_bw
+    ret.tau_gpu = device_info.gpu.memory.vram_to_compute 
+    if not ret.is_unified_mem:
+        ret.t_ram_vram = device_info.gpu.memory.read_bw
+        ret.t_vram_ram = device_info.gpu.memory.write_bw
+    ret.t_comm = 0.0
+    ret.is_android = False # no support
+    ret.d_swapout = device_info.memory.total_swap
+    ret.d_avail_cuda = device_info.gpu.memory.free if ret.has_cuda else 0.0
+    ret.d_avail_metal = device_info.gpu.memory.free if ret.has_metal else 0.0
+    return ret
+
+# Estimate FLOPs for Model 
+def profile_model(model: nn.Module, config, B: int=1, L: int=4096):
+    model_info = _profile_model(model, config, B, L)
+    ret = DeviceProfileInfo()
+    ret.b =   [ x.weight_bytes for x in model_info ]
+    ret.b_i = [ x.input_bytes  for x in model_info ]
+    ret.b_o = [ x.output_bytes for x in model_info ]
+    return ret
 
 # Get solver variables including estimated model flops/bytes
 def get_solver_vars(model: nn.Module, config, B: int = 1, L: int = 4096):

@@ -1,1 +1,1 @@
-from .mlx_deepseek import profile_model
+from .mlx_deepseek import _profile_model
