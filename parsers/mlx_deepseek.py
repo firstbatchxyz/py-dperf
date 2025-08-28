@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 from mlx_lm.models.deepseek_v2 import DeepseekV2DecoderLayer
 
-from src.model.base import IdentityBlock 
+#from src.model.base import IdentityBlock 
 
 """
     Brute force the model profiling information for Deepseek V2.
@@ -264,8 +264,8 @@ def profile_model(m: nn.Module, config: Any, B:int = 1, L:int = 4096, a_dtype=mx
                                     config.num_attention_heads*config.v_head_dim) * a_dtype.size
             layers.append(lm_decoder)
 
-        elif isinstance(l, IdentityBlock):
-            pass # TODO: Maybe add ad empty block 
+        #elif isinstance(l, IdentityBlock):
+        #    pass # TODO: Maybe add ad empty block 
                         
     # Add extra work done by the last decoder layer
     rmslm = LayerMeta()
