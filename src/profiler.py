@@ -445,6 +445,7 @@ def profile_device() -> DeviceProfileInfo:
     ret.c_cpu = 0
     ret.c_gpu = 0
     ret.s_disk = device_info.disk.random
+    ret.d_avail = device_info.memory.available
     ret.has_metal = True if device_info.gpu.name == "metal" else False
     ret.is_unified_mem = ret.has_metal # No intel macbooks support for now 
     ret.has_cuda = True if device_info.gpu.name == "cuda" else False
@@ -472,7 +473,7 @@ def profile_device() -> DeviceProfileInfo:
     ret.is_android = False # no support
     ret.d_swapout = device_info.memory.total_swap
     ret.d_avail_cuda = device_info.gpu.memory.free if ret.has_cuda else 0.0
-    ret.d_avail_metal = device_info.gpu.memory.free if ret.has_metal else 0.0
+    ret.d_avail_metal = device_info.memory.available if ret.has_metal else 0.0
     return ret
 
 # Estimate FLOPs for Model 
