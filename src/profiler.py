@@ -376,7 +376,7 @@ def metal_bench_mem_to_compute(di):
     sec = bench(lambda: mx.add(A, zeros, stream=s_gpu))
     bw_cpy = (2 * M * M * M * 4) / sec
     bw_ram_read = bw_cpy / 2.0
-    di.gpu.vram_to_compute = bw_ram_read * 1e-9
+    di.gpu.memory.vram_to_compute = bw_ram_read * 1e-9
 
 
 # Solver-facing API
@@ -463,13 +463,12 @@ def profile_device() -> DeviceProfileInfo:
     }
     # Estimate 2 reads + 1 write
     ret.t_kv_cpy_cpu = device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
-    ret.t_kv_cpy_gpu = device_info.gpu.memory.two_read_one_write_bw
+    ret.t_kv_cpu_gpu = device_info.gpu.memory.read_write_bw + device_info.gpu.memory.read_bw
     ret.tau_cpu = device_info.memory.cpu_read_warm_bw
     ret.tau_gpu = device_info.gpu.memory.vram_to_compute 
     if not ret.is_unified_mem:
         ret.t_ram_vram = device_info.gpu.memory.read_bw
         ret.t_vram_ram = device_info.gpu.memory.write_bw
-    ret.t_comm = 0.0
     ret.is_android = False # no support
     ret.d_swapout = device_info.memory.total_swap
     ret.d_avail_cuda = device_info.gpu.memory.free if ret.has_cuda else 0.0
