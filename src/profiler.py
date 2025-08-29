@@ -21,7 +21,7 @@ from cpuinfo import get_cpu_info
 
 from dataclasses import asdict
 from src.datatypes import DeviceInfo
-from src.parsers.mlx_deepseek import _profile_model
+from src.parsers.mlx import _profile_model
 # from src.utils.logger import logger
 
 try:
