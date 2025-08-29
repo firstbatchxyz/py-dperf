@@ -464,9 +464,9 @@ def profile_device() -> DeviceProfileInfo:
     # Estimate 2 reads + 1 write
     ret.t_kv_cpy_cpu = device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
     if device_info.gpu.name == "cuda":
-        ret.t_kv_cpu_gpu = device_info.gpu.memory.read_write_bw + device_info.gpu.memory.read_bw
+        ret.t_kv_cpy_gpu = device_info.gpu.memory.read_write_bw + device_info.gpu.memory.read_bw
     else:
-        ret.t_kv_cpu_gpu = device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
+        ret.t_kv_cpy_gpu = device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
     ret.tau_cpu = device_info.memory.cpu_read_warm_bw
     ret.tau_gpu = device_info.gpu.memory.vram_to_compute 
     if not ret.is_unified_mem:
