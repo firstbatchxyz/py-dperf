@@ -482,6 +482,7 @@ def profile_model(model: nn.Module, config, B: int=1, L: int=4096):
     ret.b =   [ x.weight_bytes for x in model_info ]
     ret.b_i = [ x.input_bytes  for x in model_info ]
     ret.b_o = [ x.output_bytes for x in model_info ]
+    ret.f_q = [x.flops for x in model_info]
     return ret
 
 # Get solver variables including estimated model flops/bytes
