@@ -404,36 +404,38 @@ def profile() -> DeviceInfo:
 
 
 @dataclass
-class DeviceProfileInfo:
+class ModelProfileInfo:
     b: List[int] = None
     b_i: List[int] = None
     b_o: List[int] = None
-    d_avail: int = None 
-    c_cpu: int = None
-    c_gpu: int = None
-    s_disk: float = None 
+    f_q: List[int] = None
+
+@dataclass
+class DeviceProfileInfo:
+    d_avail: int = 0 
+    c_cpu: int = 0 
+    c_gpu: int = 0 
+    s_disk: float = 0.0 
 
     # Values for a, b, c
     is_unified_mem: bool = False
     has_cuda: bool = False
     has_metal: bool = False
     os_type: str = ""
-    f_q: List[int] = None
     s_cpu: Dict[str, float] = None
     s_gpu: Dict[str, float] = None
-    t_kv_cpy_cpu: float = None
-    t_kv_cpy_gpu: float = None 
-    tau_cpu: float = None 
-    tau_gpu: float = None 
-    t_ram_vram: float = None 
-    t_vram_ram: float = None
-    t_comm: float = None 
+    t_kv_cpy_cpu: float = 0.0 
+    t_kv_cpy_gpu: float = 0.0 
+    tau_cpu: float = 0.0 
+    tau_gpu: float = 0.0 
+    t_ram_vram: float = 0.0 
+    t_vram_ram: float = 0.0 
 
     # Values for z, Z^gpu
     is_android: bool = False
-    d_swapout: float = None 
-    d_avail_cuda: float = None 
-    d_avail_metal: float = None 
+    d_swapout: float = 0.0 
+    d_avail_cuda: float = 0.0 
+    d_avail_metal: float = 0.0 
 
     def json(self):
         return json.dumps(asdict(self))
@@ -481,7 +483,8 @@ def profile_device() -> DeviceProfileInfo:
 # Estimate FLOPs for Model 
 def profile_model(model: nn.Module, config, B: int=1, L: int=4096):
     model_info = _profile_model(model, config, B, L)
-    ret = DeviceProfileInfo()
+    #ret = DeviceProfileInfo()
+    ret = ModelProfileInfo()
     ret.b =   [ x.weight_bytes for x in model_info ]
     ret.b_i = [ x.input_bytes  for x in model_info ]
     ret.b_o = [ x.output_bytes for x in model_info ]
