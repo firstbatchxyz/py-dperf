@@ -341,6 +341,15 @@ def get_sysmem_info(device_info):
     device_info.memory.cpu_read_warm_bw = bytes_A / bench(
         lambda: mx.abs(A), 5, 10
     )  # bytes/s
+
+    device_info.memory.cpu_write_cold_bw = bytes_A / bench(
+        lambda: mx.full((M*M*M), 23.4, dtype=mx.float32), 0, 1
+    )
+
+    device_info.memory.cpu_write_warm_bw = bytes_A / bench(
+        lambda: mx.full((M*M*M), 351.23, dtype=mx.float32), 5, 10
+    )
+
     device_info.memory.memcpy_delay = 1000 * bench(lambda: mx.eval(mx.array(B)))
 
 
@@ -563,7 +572,8 @@ def profile_device() -> DeviceProfileInfo:
     # Using a standard 1MB payload for timing calculation
     kv_payload_size = 1024 * 1024  # 1MB standard payload
 
-    cpu_bw = device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
+    #cpu_bw = device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
+    cpu_bw = device_info.memory.cpu_read_cold_bw*2 + device_info.memory.cpu_write_cold_bw
     if cpu_bw > 0:
         ret.t_kvcpy_cpu = kv_payload_size / cpu_bw  # seconds for 1MB KV copy
 
