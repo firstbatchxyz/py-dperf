@@ -13,15 +13,19 @@ import time, statistics as stats
 
 import mlx.core as mx
 import mlx.nn as nn
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict
+
+# Type alias for quantization performance metrics
+QuantPerf = Dict[str, float]
 
 from cpuinfo import get_cpu_info
 
 from dataclasses import asdict
 from src.datatypes import DeviceInfo
 from src.parsers.mlx import _profile_model
+
 # from src.utils.logger import logger
 
 try:
@@ -405,17 +409,42 @@ def profile() -> DeviceInfo:
 
 @dataclass
 class ModelProfileInfo:
-    b: List[int] = None
-    b_i: List[int] = None
-    b_o: List[int] = None
-    f_q: List[int] = None
+    """
+    Model-global constants (bytes, sizes, FLOPs) from profiler.
+    """
+
+    # Per-layer metrics (existing fields)
+    b: List[int] = None  # bytes per layer (list)
+    b_i: List[int] = None  # input bytes per layer (list)
+    b_o: List[int] = None  # output bytes per layer (list)
+    f_q: List[int] = None  # FLOPs per layer (list)
+
+    # Model-level metrics (new fields)
+    L: int = 0  # total layers
+    hk: int = 0  # heads for keys
+    ek: int = 0  # emb per head (k)
+    hv: int = 0  # heads for values
+    ev: int = 0  # emb per head (v)
+    n_kv: int = 0  # tokens in KV cache
+    e_embed: int = 0  # embedding size
+    V: int = 0  # vocabulary size
+
+    # FLOPs per layer for each quantization
+    f_by_quant: QuantPerf = field(default_factory=dict)  # f_q (per "typical" layer)
+    f_out_by_quant: QuantPerf = field(
+        default_factory=dict
+    )  # f_{q, out} (for output layer)
+    Q: List[str] = field(
+        default_factory=lambda: ["Q4_K", "Q5_K", "Q6_K", "Q8_0", "F16", "F32"]
+    )
+
 
 @dataclass
 class DeviceProfileInfo:
-    d_avail: int = 0 
-    c_cpu: int = 0 
-    c_gpu: int = 0 
-    s_disk: float = 0.0 
+    d_avail: int = 0
+    c_cpu: int = 0
+    c_gpu: int = 0
+    s_disk: float = 0.0
 
     # Values for a, b, c
     is_unified_mem: bool = False
@@ -424,23 +453,24 @@ class DeviceProfileInfo:
     os_type: str = ""
     s_cpu: Dict[str, float] = None
     s_gpu: Dict[str, float] = None
-    t_kv_cpy_cpu: float = 0.0 
-    t_kv_cpy_gpu: float = 0.0 
-    tau_cpu: float = 0.0 
-    tau_gpu: float = 0.0 
-    t_ram_vram: float = 0.0 
-    t_vram_ram: float = 0.0 
+    t_kv_cpy_cpu: float = 0.0
+    t_kv_cpy_gpu: float = 0.0
+    tau_cpu: float = 0.0
+    tau_gpu: float = 0.0
+    t_ram_vram: float = 0.0
+    t_vram_ram: float = 0.0
 
     # Values for z, Z^gpu
     is_android: bool = False
-    d_swapout: float = 0.0 
-    d_avail_cuda: float = 0.0 
-    d_avail_metal: float = 0.0 
+    d_swapout: float = 0.0
+    d_avail_cuda: float = 0.0
+    d_avail_metal: float = 0.0
 
     def json(self):
         return json.dumps(asdict(self))
 
-# Get device information in solver variable names 
+
+# Get device information in solver variable names
 def profile_device() -> DeviceProfileInfo:
     device_info = profile()
     ret = DeviceProfileInfo()
@@ -449,7 +479,7 @@ def profile_device() -> DeviceProfileInfo:
     ret.s_disk = device_info.disk.random
     ret.d_avail = device_info.memory.available
     ret.has_metal = True if device_info.gpu.name == "metal" else False
-    ret.is_unified_mem = ret.has_metal # No intel macbooks support for now 
+    ret.is_unified_mem = ret.has_metal  # No intel macbooks support for now
     ret.has_cuda = True if device_info.gpu.name == "cuda" else False
     ret.os_type = device_info.os
     ret.s_cpu = {
@@ -457,39 +487,119 @@ def profile_device() -> DeviceProfileInfo:
         "f32": device_info.cpu.benchmarks.flops_f32,
         "fp16": device_info.cpu.benchmarks.flops_fp16,
         "bf16": device_info.cpu.benchmarks.flops_bf16,
-    } 
+    }
     ret.s_gpu = {
         "f32": device_info.gpu.benchmarks.flops_f32,
         "fp16": device_info.gpu.benchmarks.flops_fp16,
         "bf16": device_info.gpu.benchmarks.flops_bf16,
     }
     # Estimate 2 reads + 1 write
-    ret.t_kv_cpy_cpu = device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
+    ret.t_kv_cpy_cpu = (
+        device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
+    )
     if device_info.gpu.name == "cuda":
-        ret.t_kv_cpy_gpu = device_info.gpu.memory.read_write_bw + device_info.gpu.memory.read_bw
+        ret.t_kv_cpy_gpu = (
+            device_info.gpu.memory.read_write_bw + device_info.gpu.memory.read_bw
+        )
     else:
-        ret.t_kv_cpy_gpu = device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
+        ret.t_kv_cpy_gpu = (
+            device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
+        )
     ret.tau_cpu = device_info.memory.cpu_read_warm_bw
-    ret.tau_gpu = device_info.gpu.memory.vram_to_compute 
+    ret.tau_gpu = device_info.gpu.memory.vram_to_compute
     if not ret.is_unified_mem:
         ret.t_ram_vram = device_info.gpu.memory.read_bw
         ret.t_vram_ram = device_info.gpu.memory.write_bw
-    ret.is_android = False # no support
+    ret.is_android = False  # no support
     ret.d_swapout = device_info.memory.total_swap
     ret.d_avail_cuda = device_info.gpu.memory.free if ret.has_cuda else 0.0
     ret.d_avail_metal = device_info.memory.available if ret.has_metal else 0.0
     return ret
 
-# Estimate FLOPs for Model 
-def profile_model(model: nn.Module, config, B: int=1, L: int=4096):
+
+# Estimate FLOPs for Model
+def profile_model(
+    model: nn.Module, config, B: int = 1, L: int = 4096, config_dict: Dict = None
+):
     model_info = _profile_model(model, config, B, L)
-    #ret = DeviceProfileInfo()
     ret = ModelProfileInfo()
-    ret.b =   [ x.weight_bytes for x in model_info ]
-    ret.b_i = [ x.input_bytes  for x in model_info ]
-    ret.b_o = [ x.output_bytes for x in model_info ]
+
+    # Per-layer metrics (existing)
+    ret.b = [x.weight_bytes for x in model_info]
+    ret.b_i = [x.input_bytes for x in model_info]
+    ret.b_o = [x.output_bytes for x in model_info]
     ret.f_q = [x.flops for x in model_info]
+
+    # Use config_dict if available for more complete access, otherwise fall back to config object
+    cfg = config_dict if config_dict else {}
+
+    # Model-level metrics from config
+    ret.L = cfg.get(
+        "num_hidden_layers", getattr(config, "num_hidden_layers", len(model_info) - 1)
+    )
+    ret.e_embed = cfg.get("hidden_size", getattr(config, "hidden_size", 0))
+    ret.V = cfg.get("vocab_size", getattr(config, "vocab_size", 0))
+
+    # Attention head configuration
+    num_attention_heads = cfg.get(
+        "num_attention_heads", getattr(config, "num_attention_heads", 0)
+    )
+    ret.hk = cfg.get(
+        "num_key_value_heads",
+        getattr(config, "num_key_value_heads", num_attention_heads),
+    )
+    ret.hv = cfg.get(
+        "num_key_value_heads",
+        getattr(config, "num_key_value_heads", num_attention_heads),
+    )
+
+    # Calculate head dimension
+    head_dim = cfg.get("head_dim", getattr(config, "head_dim", 0))
+    if head_dim == 0 and ret.e_embed > 0 and num_attention_heads > 0:
+        head_dim = ret.e_embed // num_attention_heads
+    ret.ek = head_dim
+    ret.ev = head_dim
+
+    # KV cache tokens (using max position embeddings as proxy)
+    ret.n_kv = cfg.get(
+        "max_position_embeddings", getattr(config, "max_position_embeddings", L)
+    )
+
+    # Get quantization info from config if available
+    quant_info = cfg.get("quantization", cfg.get("quantization_config", {}))
+    bits = quant_info.get("bits", 32) if isinstance(quant_info, dict) else 32
+
+    # Calculate quantization FLOPs based on actual quantization bits
+    if ret.f_q and len(ret.f_q) > 1:
+        typical_layer_flops = ret.f_q[1] if len(ret.f_q) > 1 else ret.f_q[0]
+        output_layer_flops = ret.f_q[-1] if ret.f_q else 0
+
+        # More accurate estimates based on bit width
+        quant_scales = {
+            "Q4_K": 4.0 / 32.0,
+            "Q5_K": 5.0 / 32.0,
+            "Q6_K": 6.0 / 32.0,
+            "Q8_0": 8.0 / 32.0,
+            "F16": 16.0 / 32.0,
+            "F32": 1.0,
+        }
+
+        # Adjust scales if we know the actual quantization
+        if bits == 4:
+            base_scale = 4.0 / 32.0
+        elif bits == 8:
+            base_scale = 8.0 / 32.0
+        elif bits == 16:
+            base_scale = 16.0 / 32.0
+        else:
+            base_scale = 1.0
+
+        for quant, scale in quant_scales.items():
+            ret.f_by_quant[quant] = typical_layer_flops * scale
+            ret.f_out_by_quant[quant] = output_layer_flops * scale
+
     return ret
+
 
 # Get solver variables including estimated model flops/bytes
 def get_solver_vars(model: nn.Module, config, B: int = 1, L: int = 4096):
