@@ -110,7 +110,7 @@ def _mlx_gemm_benchmark(
 
     median = stats.median(times)
     flop = 2.0 * N * M * K
-    return flop / median * 1e-9
+    return flop / median  # Return FLOPS, not GFLOPS
 
 
 # MLX doesn't support multiprocessing for these ops, only separate streams with one op/stream
@@ -226,11 +226,11 @@ def bench_cpu_to_gpu_transfers(di):
                     sec_gpu2cpu.ptr,
                 )
 
-        di.gpu.memory.read_bw = (bytes_total / bench(cpu_to_gpu, sec_cpu2gpu)) * 1e-9
-        di.gpu.memory.write_bw = (bytes_total / bench(gpu_to_cpu, sec_gpu2cpu)) * 1e-9
+        di.gpu.memory.read_bw = bytes_total / bench(cpu_to_gpu, sec_cpu2gpu)  # bytes/s
+        di.gpu.memory.write_bw = bytes_total / bench(gpu_to_cpu, sec_gpu2cpu)  # bytes/s
         di.gpu.memory.read_write_bw = (
             2 * bytes_total / bench(read_write, sec_rw)
-        ) * 1e-9
+        )  # bytes/s
 
 
 def bench_disk_mainfs(di, iter=10, reads=200):
@@ -287,10 +287,10 @@ def bench_disk_mainfs(di, iter=10, reads=200):
     r_time = sum(times) / iter
     os.remove(path)
 
-    # Transform in GB/s
-    di.disk.write = ((M * M * M * 4) / w_time) * 1e-9
-    di.disk.read = ((M * M * M * 4) / r_time) * 1e-9
-    di.disk.random = (reads * BLOCK) / (rd_time * 1e9)
+    # Transform to bytes/s
+    di.disk.write = (M * M * M * 4) / w_time  # bytes/s
+    di.disk.read = (M * M * M * 4) / r_time  # bytes/s
+    di.disk.random = (reads * BLOCK) / rd_time  # bytes/s
 
 
 def bench(fn, warmup=3, iters=10):
@@ -315,10 +315,10 @@ def get_sysmem_info(device_info):
     sm = psutil.swap_memory()
     mx.set_default_device(mx.cpu)
     vm = psutil.virtual_memory()
-    device_info.memory.total = vm.total * 1e-9
-    device_info.memory.available = vm.available * 1e-9
-    device_info.memory.total_swap = sm.total * 1e-9
-    device_info.memory.available_swap = sm.free * 1e-9
+    device_info.memory.total = vm.total  # bytes
+    device_info.memory.available = vm.available  # bytes
+    device_info.memory.total_swap = sm.total  # bytes
+    device_info.memory.available_swap = sm.free  # bytes
     device_info.memory.can_swap = 1 if sm.total > 0 else 0
 
     M = 2 << 8
@@ -326,9 +326,9 @@ def get_sysmem_info(device_info):
     B = np.random.randn(M, M, M)
     bytes_A = M * M * M * 4
 
-    device_info.memory.cpu_read_cold_bw = (
-        bytes_A / bench(lambda: mx.max(A), 0, 1)
-    ) / 1e9
+    device_info.memory.cpu_read_cold_bw = bytes_A / bench(
+        lambda: mx.max(A), 0, 1
+    )  # bytes/s
 
     t = 4
     parts = mx.split(A, t)
@@ -337,10 +337,10 @@ def get_sysmem_info(device_info):
     def parallel_read_hot():
         return [mx.eval(mx.abs(p, stream=s)) for p, s in zip(parts, streams)]
 
-    # device_info.memory.cpu_read_warm_bw = (bytes_A/bench(lambda: parallel_read_hot()))*1e-9
-    device_info.memory.cpu_read_warm_bw = (
-        bytes_A / bench(lambda: mx.abs(A), 5, 10)
-    ) / 1e9
+    # device_info.memory.cpu_read_warm_bw = bytes_A/bench(lambda: parallel_read_hot())  # bytes/s
+    device_info.memory.cpu_read_warm_bw = bytes_A / bench(
+        lambda: mx.abs(A), 5, 10
+    )  # bytes/s
     device_info.memory.memcpy_delay = 1000 * bench(lambda: mx.eval(mx.array(B)))
 
 
@@ -350,9 +350,9 @@ def metal_get_memory_info(device_info):
     vm = psutil.virtual_memory()
     if unified_mem:
         device_info.gpu.name = "metal"
-        device_info.gpu.unified = True
-        device_info.gpu.total = vm.total
-        device_info.gpu.free = vm.available
+        device_info.gpu.memory.unified_memory = True
+        device_info.gpu.memory.total = vm.total  # bytes
+        device_info.gpu.memory.free = vm.available  # bytes
         # bench_gpu_transfer_times(device_info)
     # Skip the intel macbooks for now
 
@@ -361,8 +361,8 @@ def metal_get_memory_info(device_info):
 def cuda_get_memory_info(di):
     if _has_cupy:
         free, total = cp.cuda.runtime.memGetInfo()
-        di.gpu.memory.total = total * 1e-9
-        di.gpu.memory.free = free * 1e-9
+        di.gpu.memory.total = total  # bytes
+        di.gpu.memory.free = free  # bytes
 
 
 def cuda_bench_mem_to_compute(di):
@@ -380,7 +380,7 @@ def metal_bench_mem_to_compute(di):
     sec = bench(lambda: mx.add(A, zeros, stream=s_gpu))
     bw_cpy = (2 * M * M * M * 4) / sec
     bw_ram_read = bw_cpy / 2.0
-    di.gpu.memory.vram_to_compute = bw_ram_read * 1e-9
+    di.gpu.memory.vram_to_compute = bw_ram_read  # bytes/s
 
 
 # Solver-facing API
@@ -441,30 +441,55 @@ class ModelProfileInfo:
 
 @dataclass
 class DeviceProfileInfo:
-    d_avail: int = 0
-    c_cpu: int = 0
-    c_gpu: int = 0
-    s_disk: float = 0.0
+    """
+    One device dm with measured/profiler data.
+    Notation in comments matches the paper's symbols.
+    """
 
-    # Values for a, b, c
-    is_unified_mem: bool = False
-    has_cuda: bool = False
-    has_metal: bool = False
-    os_type: str = ""
-    s_cpu: Dict[str, float] = None
-    s_gpu: Dict[str, float] = None
-    t_kv_cpy_cpu: float = 0.0
-    t_kv_cpy_gpu: float = 0.0
-    tau_cpu: float = 0.0
-    tau_gpu: float = 0.0
-    t_ram_vram: float = 0.0
-    t_vram_ram: float = 0.0
+    # --- required (no defaults) ---
+    name: str = ""
+    os_type: str = ""  # 'mac_no_metal' | 'mac_metal' | 'linux' | 'android'
+    is_head: bool = (
+        True  # I_{m=1}  (True for the head device that holds input/output layers on CPU)
+    )
+    is_unified_mem: bool = False  # I_UMA (Apple Silicon etc.)
+    has_cuda: bool = False  # I_cuda
+    has_metal: bool = False  # I_metal
 
-    # Values for z, Z^gpu
-    is_android: bool = False
-    d_swapout: float = 0.0
-    d_avail_cuda: float = 0.0
-    d_avail_metal: float = 0.0
+    # Throughput tables (FLOPS) per quantization for CPU/GPU paths
+    scpu: QuantPerf = None  # s^{cpu}_{m,q}
+    T_cpu: float = 0.0  # T^{cpu}_m (register loading throughput, bytes/s)
+
+    # KV-copy times (sec) for a fixed 2*(h_k e_k + h_v e_v)·n_kv byte payload
+    t_kvcpy_cpu: float = 0.0  # t^{kv_cpy,cpu}_m
+    t_kvcpy_gpu: float = 0.0  # t^{kv_cpy,gpu}_m
+
+    # Host<->GPU staging + inter-device comm (sec)
+    t_ram2vram: float = 0.0  # t^{ram->vram}_m
+    t_vram2ram: float = 0.0  # t^{vram->ram}_m
+    t_comm: float = 0.0  # t^{comm}_m
+
+    # Disk read throughput (bytes/s)
+    s_disk: float = 0.0  # s^{disk}_m
+
+    # Available memories / working sets (bytes)
+    d_avail_ram: int = 0  # d^{avail}_m (RAM)
+
+    # --- optional (come after required) ---
+    sgpu_cuda: QuantPerf = None  # s^{gpu}_{m,q} for CUDA
+    sgpu_metal: QuantPerf = None  # s^{gpu}_{m,q} for Metal
+    T_cuda: float = None  # T^{gpu}_m for CUDA (bytes/s)
+    T_metal: float = None  # T^{gpu}_m for Metal (bytes/s)
+    d_avail_cuda: int = None  # d^{avail}_{m,cuda} (VRAM)
+    d_avail_metal: int = None  # d^{avail}_{m,metal} (Metal working set)
+
+    # --- small buffers and swap caps (bytes) ---
+    c_cpu: int = 0  # c^{cpu} (CPU compute buffer)
+    c_gpu: int = 0  # c^{gpu} (GPU compute buffer)
+
+    # Android swap capacity (only used if os_type == "android")
+    d_bytes_can_swap: int = 0  # potential bytes we allow swapping
+    d_swap_avail: int = 0  # actually available swap bytes
 
     def json(self):
         return json.dumps(asdict(self))
@@ -474,46 +499,114 @@ class DeviceProfileInfo:
 def profile_device() -> DeviceProfileInfo:
     device_info = profile()
     ret = DeviceProfileInfo()
-    ret.c_cpu = 0
-    ret.c_gpu = 0
-    ret.s_disk = device_info.disk.random
-    ret.d_avail = device_info.memory.available
+
+    # Set device name (hostname or identifier)
+    ret.name = platform.node() or "device"
+
+    # Determine OS type with metal/no-metal distinction
     ret.has_metal = True if device_info.gpu.name == "metal" else False
-    ret.is_unified_mem = ret.has_metal  # No intel macbooks support for now
     ret.has_cuda = True if device_info.gpu.name == "cuda" else False
-    ret.os_type = device_info.os
-    ret.s_cpu = {
+    ret.is_unified_mem = ret.has_metal  # Apple Silicon has unified memory
+
+    # Set OS type based on platform and GPU availability
+    if platform.system() == "Darwin":
+        if ret.has_metal:
+            ret.os_type = "mac_metal"
+        else:
+            ret.os_type = "mac_no_metal"
+    elif platform.system() == "Linux":
+        # Check if Android
+        try:
+            with open("/proc/version", "r") as f:
+                if "android" in f.read().lower():
+                    ret.os_type = "android"
+                else:
+                    ret.os_type = "linux"
+        except:
+            ret.os_type = "linux"
+    else:
+        ret.os_type = "linux"  # Default fallback
+
+    # Set is_head to True by default (single device scenario)
+    ret.is_head = True
+
+    # CPU throughput tables (FLOPS)
+    ret.scpu = {
         "f64": device_info.cpu.benchmarks.flops_f64,
         "f32": device_info.cpu.benchmarks.flops_f32,
         "fp16": device_info.cpu.benchmarks.flops_fp16,
         "bf16": device_info.cpu.benchmarks.flops_bf16,
     }
-    ret.s_gpu = {
-        "f32": device_info.gpu.benchmarks.flops_f32,
-        "fp16": device_info.gpu.benchmarks.flops_fp16,
-        "bf16": device_info.gpu.benchmarks.flops_bf16,
-    }
-    # Estimate 2 reads + 1 write
-    ret.t_kv_cpy_cpu = (
-        device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
-    )
+
+    # CPU register loading throughput (bytes/s) - use warm bandwidth
+    ret.T_cpu = device_info.memory.cpu_read_warm_bw  # Already in bytes/s
+
+    # GPU throughput tables (FLOPS) - separate for CUDA and Metal
+    if ret.has_cuda:
+        ret.sgpu_cuda = {
+            "f32": device_info.gpu.benchmarks.flops_f32,
+            "fp16": device_info.gpu.benchmarks.flops_fp16,
+            "bf16": device_info.gpu.benchmarks.flops_bf16,
+        }
+        # CUDA memory throughput (bytes/s)
+        ret.T_cuda = device_info.gpu.memory.vram_to_compute  # Already in bytes/s
+    elif ret.has_metal:
+        ret.sgpu_metal = {
+            "f32": device_info.gpu.benchmarks.flops_f32,
+            "fp16": device_info.gpu.benchmarks.flops_fp16,
+            "bf16": device_info.gpu.benchmarks.flops_bf16,
+        }
+        # Metal memory throughput (bytes/s)
+        ret.T_metal = device_info.gpu.memory.vram_to_compute  # Already in bytes/s
+
+    # KV-copy times (sec) - time for a standard KV operation
+    # Using a standard 1MB payload for timing calculation
+    kv_payload_size = 1024 * 1024  # 1MB standard payload
+
+    cpu_bw = device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
+    if cpu_bw > 0:
+        ret.t_kvcpy_cpu = kv_payload_size / cpu_bw  # seconds for 1MB KV copy
+
     if device_info.gpu.name == "cuda":
-        ret.t_kv_cpy_gpu = (
-            device_info.gpu.memory.read_write_bw + device_info.gpu.memory.read_bw
-        )
-    else:
-        ret.t_kv_cpy_gpu = (
-            device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
-        )
-    ret.tau_cpu = device_info.memory.cpu_read_warm_bw
-    ret.tau_gpu = device_info.gpu.memory.vram_to_compute
+        gpu_bw = device_info.gpu.memory.read_write_bw + device_info.gpu.memory.read_bw
+        if gpu_bw > 0:
+            ret.t_kvcpy_gpu = kv_payload_size / gpu_bw  # seconds for 1MB KV copy
+    elif ret.has_metal:
+        if cpu_bw > 0:
+            ret.t_kvcpy_gpu = (
+                kv_payload_size / cpu_bw
+            )  # seconds for 1MB KV copy (unified memory)
+
+    # Host<->GPU staging times (sec) - time for 1MB transfer
+    transfer_size = 1024 * 1024  # 1MB standard transfer
     if not ret.is_unified_mem:
-        ret.t_ram_vram = device_info.gpu.memory.read_bw
-        ret.t_vram_ram = device_info.gpu.memory.write_bw
-    ret.is_android = False  # no support
-    ret.d_swapout = device_info.memory.total_swap
-    ret.d_avail_cuda = device_info.gpu.memory.free if ret.has_cuda else 0.0
-    ret.d_avail_metal = device_info.memory.available if ret.has_metal else 0.0
+        if device_info.gpu.memory.read_bw > 0:
+            ret.t_ram2vram = transfer_size / device_info.gpu.memory.read_bw  # seconds
+        if device_info.gpu.memory.write_bw > 0:
+            ret.t_vram2ram = transfer_size / device_info.gpu.memory.write_bw  # seconds
+
+    # Inter-device communication time (0 for single device)
+    ret.t_comm = 0.0
+
+    # Disk read throughput (bytes/s)
+    ret.s_disk = device_info.disk.random  # Already in bytes/s
+
+    # Available memories (already in bytes)
+    ret.d_avail_ram = int(device_info.memory.available)
+
+    if ret.has_cuda:
+        ret.d_avail_cuda = int(device_info.gpu.memory.free)
+    elif ret.has_metal:
+        ret.d_avail_metal = int(device_info.memory.available)  # Unified memory
+
+    # Small buffers (bytes) - set to 0 for now
+    ret.c_cpu = 0
+    ret.c_gpu = 0
+
+    # Swap capacity (already in bytes)
+    ret.d_bytes_can_swap = int(device_info.memory.total_swap)
+    ret.d_swap_avail = int(device_info.memory.available_swap)
+
     return ret
 
 

@@ -13,3 +13,4 @@ media/
 uv.lock
 .python-version
 play.py
+outputs
