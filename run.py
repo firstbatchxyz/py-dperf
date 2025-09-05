@@ -102,7 +102,7 @@ if __name__ == "__main__":
             pprint.pprint(ret)
             sys.exit(1)
         with open(args.output_path, "w") as f:
-            ret = profile_device()
+            ret = profile_device(config_obj)
             if ret is not None:
                 f.write(ret.json())
             else:
