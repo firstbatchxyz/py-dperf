@@ -598,24 +598,22 @@ def profile_device(config) -> DeviceProfileInfo:
         ret.T_metal = device_info.gpu.memory.vram_to_compute  # Already in bytes/s
 
     # KV-copy times (sec) - time for a standard KV operation
-    # Using a standard 1MB payload for timing calculation
-    kv_payload_size = 1024 * 1024  # 1MB standard payload
-    #kv_payload_size = 2 * config.hidden_size*mx.float16.itemsize # 1 KV copy
+    # Using a full layer KV I/O 
+    kv_payload_size = 0
+    if hasattr(config, "num_attention_heads"):
+        if hasattr(config, "num_key_value_heads"):
+            head_dim = config.hidden_size // config.num_attention_heads
+            kv_payload_size += 2 * head_dim * config.num_key_value_heads * mx.float16.size
+        else: 
+            kv_payload_size += 2 * config.hidden_size * mx.float16.size 
 
-    #cpu_bw = device_info.memory.cpu_rw_cold_bw + device_info.memory.cpu_read_cold_bw
-    cpu_bw = device_info.memory.cpu_read_cold_bw*2 + device_info.memory.cpu_write_cold_bw
-    if cpu_bw > 0:
-        ret.t_kvcpy_cpu = kv_payload_size / cpu_bw  # seconds for 1MB KV copy
+    # Use cold CPU write bandwidth
+    ret.t_kvcpy_cpu = kv_payload_size / device_info.memory.cpu_write_cold_bw  # s/layer
 
     if device_info.gpu.name == "cuda":
-        gpu_bw = device_info.gpu.memory.read_write_bw + device_info.gpu.memory.read_bw
-        if gpu_bw > 0:
-            ret.t_kvcpy_gpu = kv_payload_size / gpu_bw  # seconds for 1MB KV copy
+        ret.t_kvcpy_gpu = kv_payload_size / device_info.gpu.write_bw * 1e3
     elif ret.has_metal:
-        if cpu_bw > 0:
-            ret.t_kvcpy_gpu = (
-                kv_payload_size / cpu_bw
-            )  # seconds for 1MB KV copy (unified memory)
+        ret.t_kvcpy_gpu = kv_payload_size / device_info.memory.cpu_write_cold_bw  # s/layer
 
     # Host<->GPU staging times (sec) - time for 1MB transfer
     transfer_size = 1024 * 1024  # 1MB standard transfer
