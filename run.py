@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     # Both device and model require model config information
     if args.model is None:
-        raise ValueError("'model' value is needed to profile a model.")
+        raise ValueError("'model' value is needed to run the profiler.")
     try:
         module = importlib.import_module(f"mlx_lm.models.{args.model}")
     except ImportError as e:
