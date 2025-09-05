@@ -162,10 +162,10 @@ def run_gpu_benchmarks(device_info, n_embd: int):
 def bench_cpu_to_gpu_transfers(di, n_embd):
     if _has_cupy:  # Benchmark VRAM <-> RAM through CUDA
         N = n_embd if n_embd >= 4096 else 4096
-        bytes_total = N * N * N * cp.dtype(cp.float32).itemsize
-        shape = N * N * N
+        bytes_total = N * N * cp.dtype(cp.float32).itemsize
+        shape = N * N 
 
-        def bench(fn, name, stream, warmup=3, iter=10):
+        def bench(fn, stream, name, warmup=3, iter=10):
             times = []
             for _ in range(warmup):
                 fn()
@@ -183,10 +183,10 @@ def bench_cpu_to_gpu_transfers(di, n_embd):
                 mean = stats.mean(times) * 1000 
                 std  = stats.stdev(times) * 1000
                 p50  = stats.median(times) * 1000
-                p95  = stats.quantiles(times, n=iters)[iters-5] * 1000
-                p99  = stats.quantiles(times, n=iters)[iters-2] * 1000
+                p95  = stats.quantiles(times, n=iter)[iter-5] * 1000
+                p99  = stats.quantiles(times, n=iter)[iter-2] * 1000
 
-                print(f"{name}: {iters} runs [ms]: avg {mean:5.3f} ± {std:.3f}  "
+                print(f"{name}: {iter} runs [ms]: avg {mean:5.3f} ± {std:.3f}  "
                       f" p50={p50:.3f}  p95={p95:.3f}  p99={p99:.3f}")
 
             return stats.median(times)
@@ -229,6 +229,7 @@ def bench_cpu_to_gpu_transfers(di, n_embd):
                     cp.cuda.runtime.memcpyHostToDevice,
                     sec_cpu2gpu.ptr,
                 )
+                
             with sec_gpu2cpu:
                 cp.cuda.runtime.memcpyAsync(
                     h_out_ptr,
