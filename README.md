@@ -50,5 +50,5 @@ uv pip install -e ".[rocm50]"
 uv run python run.py -p model -m qwen3 -r Qwen/Qwen3-4B-MLX-8bit -b 1 -s 128 -o model_profile.json
 
 # Device profiling
-uv run run.py -p device -o device_profile.json   
+uv run run.py -p device -m qwen3 -r Qwen/Qwen3-4B-MLX-8bit -o device_profile.json   
 ```
