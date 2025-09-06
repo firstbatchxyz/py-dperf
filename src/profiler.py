@@ -652,7 +652,26 @@ def profile_device(config) -> DeviceProfileInfo:
 def profile_model(
     model: nn.Module, config, B: int = 1, L: int = 4096, config_dict: Dict = None
 ):
-    model_info = _profile_model(model, config, B, L)
+
+    dtype = None
+    bits = 0
+    group_size = 0
+    if "quantization" in config_dict:
+        if "bits" in config_dict["quantization"] and "group_size" in config_dict["quantization"]:
+            bits = config_dict["quantization"]["bits"] 
+            group_size = config_dict["quantization"]["group_size"]
+    else:
+        if "torch_dtype" in config_dict:
+            dtype = config_dict["torch_dtype"]
+    if dtype:
+        if dtype == "bfloat16" or dtype=="bf16" or dtype == "float16" or dtype == "fp16":
+            bits = 16
+        elif dtype == "float32" or dtype == "f32":
+            bits = 32
+        else:
+            raise ValueError("Unable to get quantization or dtype information from  HF config.")
+
+    model_info = _profile_model(model, config, B, L, 16, bits, group_size)
     ret = ModelProfileInfo()
 
     # Per-layer metrics (existing)
