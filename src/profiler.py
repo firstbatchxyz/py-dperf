@@ -611,7 +611,7 @@ def profile_device(config) -> DeviceProfileInfo:
     ret.t_kvcpy_cpu = kv_payload_size / device_info.memory.cpu_write_cold_bw  # s/layer
 
     if device_info.gpu.name == "cuda":
-        ret.t_kvcpy_gpu = kv_payload_size / device_info.gpu.write_bw * 1e3
+        ret.t_kvcpy_gpu = kv_payload_size / device_info.gpu.memory.write_bw * 1e3
     elif ret.has_metal:
         ret.t_kvcpy_gpu = kv_payload_size / device_info.memory.cpu_write_cold_bw  # s/layer
 
