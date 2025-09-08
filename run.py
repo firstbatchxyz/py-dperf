@@ -38,6 +38,14 @@ if __name__ == "__main__":
         type=str,
         help="Path to directory where we create the output file.",
     )
+    parser.add_argument(
+        "-d",
+        "--debug",
+        dest="debug_lvl",
+        default = 0,
+        type=int,
+        help="Debug logging level.",
+    )
     parser.add_argument("-b", "--batch", dest="B", type=int, help="Batch size")
     parser.add_argument("-s", "--sequence", dest="L", type=int, help="Sequence length")
     args = parser.parse_args()
@@ -98,11 +106,11 @@ if __name__ == "__main__":
 
     if args.ret == "device":
         if args.output_path is None:
-            ret = profile_device(config_obj)
+            ret = profile_device(config_obj, args.debug_lvl)
             pprint.pprint(ret)
             sys.exit(1)
         with open(args.output_path, "w") as f:
-            ret = profile_device(config_obj)
+            ret = profile_device(config_obj, args.debug_lvl)
             if ret is not None:
                 f.write(ret.json())
             else:
@@ -111,13 +119,13 @@ if __name__ == "__main__":
         sys.exit(1)
 
     elif args.ret == "model":
-
+          
         if args.output_path is None:
             raise ValueError("No output path give.")
             sys.exit(-1)
         with open(args.output_path, "w") as f:
             # Pass both config_obj and the full config_dict for complete access
-            ret = profile_model(obj, config_obj, int(args.B), int(args.L), config_dict)
+            ret = profile_model(obj, config_obj, int(args.B), int(args.L), config_dict, args.debug_lvl)
             f.write(json.dumps(asdict(ret)))
         sys.exit(1)
 

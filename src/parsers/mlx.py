@@ -11,10 +11,7 @@ from src.parsers.meta import LayerMeta
     NOTE: Small OPs like RoPE and norms default to 0 FLOPs
     NOTE: FMA defaults to 2 FLOPs """
 
-
-DEBUG = 0
 block_names = ["TransformerBlock", "DecoderLayer"]
-
 
 # Add the quantization metadata to final byte count
 def __quantized_bytes(n, d_bits, group_size, scale_bytes, zero_bytes):
@@ -32,7 +29,8 @@ def _profile_model(
     L: int = 4096,
     a_bits=16,
     w_bits=16,
-    group_size=32
+    group_size=32,
+    debug=0
 ):
     if not hasattr(m, "layers"):
         raise RuntimeError("Unable to profile a model without a '.layers' attribute.")
@@ -53,7 +51,7 @@ def _profile_model(
     prefill.kv_cache_w = 0
     layers.append(prefill)
 
-    if DEBUG:
+    if debug >= 1:
         print(f"FMA: 2 FLOPs")
         #print(f"Quantization: {config.quantization.bits}")
         print(f"Parsing model {config.model_type}:")
@@ -68,7 +66,7 @@ def _profile_model(
         if any(x in l.__class__.__name__ for x in ["TransformerBlock", "DecoderLayer"]):
             lm.input_bytes = (B * L * config.hidden_size * a_bits) / 8
             lm.output_bytes = (B * L * config.hidden_size * a_bits) / 8 
-            if DEBUG:
+            if debug >= 1:
               print(f"\nParsing [decoder.{decoder_idx}]:")
             for name, obj in l.named_modules():
                 if name == "post_attention_layernorm" or name == "input_layernorm":
@@ -132,12 +130,12 @@ def _profile_model(
                                 lm.weight_bytes += se_b
                                 lm.flops += se_f
 
-                        if DEBUG:
+                        if debug >= 1:
                             print(f"\tMoE Layer: FLOPs={smlp_f+se_f+gate_f} ({num_proj_smlp}x{config.num_experts_per_tok}x"
                                   f"[{config.hidden_size}, {config.moe_intermediate_size}] + {num_proj_se}x"
                                   f"{config.n_shared_experts}x[{config.hidden_size}, {config.moe_intermediate_size}] + "
-                                  f"{B}x[{config.hidden_size}, {config.n_routed_experts}]), \n\t\tb={smlp_b+se_b} @ {w_bits}" 
-                                  if has_router_gate else f"), \n\t\t   b={smlp_b+se_b} @ {w_bits},", end="")
+                                  f"{B}x[{config.hidden_size}, {config.n_routed_experts}]), b={smlp_b+se_b} @ {w_bits}bits" 
+                                  if has_router_gate else f"), b={smlp_b+se_b} @ {w_bits}bits,", end="")
                             print(f" routed_experts={config.n_routed_experts} "
                                   f"with top-k={config.num_experts_per_tok}, ", end="")
                             print(f" shared_experts={config.n_shared_experts}")
@@ -159,7 +157,7 @@ def _profile_model(
                         lm.weight_bytes += proj_bytes
 
 
-                        if DEBUG:
+                        if debug >= 1:
                             print(f"\tMLP Layer: FLOPs={num_proj*2*B*config.hidden_size*config.intermediate_size},"
                                   f"  b={proj_bytes}"
                                   f"( {num_proj} x [{config.hidden_size}, {config.intermediate_size}] @ {w_bits}),"
@@ -233,7 +231,7 @@ def _profile_model(
 
                             lm.weight_bytes += attn_bytes 
 
-                            if DEBUG:
+                            if debug >= 1:
                                 print(f"\tMulti-head Latent Attention Layer {"with Group Query Attention" if is_gqa else ""}:")
                                 print(f"\t\tq_a_proj: [{config.hidden_size}, {config.q_lora_rank} ], FLOPs={q_a_proj}, b={q_a_proj_bytes}")
                                 print(f"\t\tq_b_proj: [{config.num_attention_heads*q_head_dim}, {config.q_lora_rank}], "
@@ -289,7 +287,7 @@ def _profile_model(
 
                         lm.weight_bytes += attn_bytes 
 
-                        if DEBUG:
+                        if debug >= 1:
                             print(f"\tGrouped Query Attention Layer: "
                                   f"FLOPs={8 * B * config.hidden_size * config.hidden_size + 4 * B * L * config.hidden_size}, "
                                   f"b={attn_bytes} "
@@ -314,8 +312,8 @@ def _profile_model(
 
                         lm.weight_bytes = attn_bytes 
 
-                        if DEBUG:
-                            print(f"    Attention Layer: FLOPs={8 * B * config.hidden_size * config.hidden_size + 4 * B * L * config.hidden_size}, "
+                        if debug >= 1:
+                            print(f"\tAttention Layer: FLOPs={8 * B * config.hidden_size * config.hidden_size + 4 * B * L * config.hidden_size}, "
                                   f"b={attn_bytes} "
                                   f"kv_cache_read={(B * L * (2 * config.hidden_size) * a_bits) / 8}, "
                                   f"kv_cache_write={(B * (2 * config.hidden_size) * a_bits) / 8}")

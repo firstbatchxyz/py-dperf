@@ -17,8 +17,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict
 
-DEBUG = 1
-
 # Type alias for quantization performance metrics
 QuantPerf = Dict[str, float]
 
@@ -45,7 +43,7 @@ def get_os(device_info):
     device_info.os = platform.system()
 
 
-def fill_cpu_info(di):
+def fill_cpu_info(di, debug):
     info = get_cpu_info()
     di.cpu.model = info["brand_raw"]
     di.cpu.arch = ["arch_string_raw"]
@@ -90,7 +88,7 @@ def fill_cpu_info(di):
 
 # Dense gemm benchmark
 def _mlx_gemm_benchmark(
-    device, N, M, K, warmup: int = 3, iters: int = 10, dtype=mx.float32
+    device, N, M, K, warmup: int = 3, iters: int = 10, dtype=mx.float32, debug=0
 ) -> float:
     try:
         mx.set_default_device(device)
@@ -113,7 +111,7 @@ def _mlx_gemm_benchmark(
         median = stats.median(times)
         flop = 2.0 * N * M * K
 
-        if DEBUG:
+        if debug >= 1:
             mean = stats.mean(times) * 1000 
             std  = stats.stdev(times) * 1000
             p50  = stats.median(times) * 1000
@@ -131,65 +129,64 @@ def _mlx_gemm_benchmark(
 
 # MLX doesn't support multiprocessing for these ops, only separate streams with one op/stream
 # Int datatype not supported on either device
-def run_cpu_benchmarks(device_info, n_embd: int):
+def run_cpu_benchmarks(device_info, n_embd: int, debug):
     M = N = K = int(n_embd/8 if n_embd >= 4096 else 4096/8) # Smaller size on CPU
-    device_info.cpu.benchmarks.flops_f64  = _mlx_gemm_benchmark( mx.cpu, N, M, K, 5, 100, mx.float64)
-    device_info.cpu.benchmarks.flops_f32  = _mlx_gemm_benchmark( mx.cpu, N, M, K, 5, 100, mx.float32)
-    device_info.cpu.benchmarks.flops_fp16 = _mlx_gemm_benchmark( mx.cpu, N, M, K, 5, 100, mx.float16)
-    device_info.cpu.benchmarks.flops_bf16 = _mlx_gemm_benchmark( mx.cpu, N, M, K, 5, 100, mx.bfloat16)
-    device_info.cpu.benchmarks.flops_u32  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint32)
-    device_info.cpu.benchmarks.flops_u16  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint16)
-    device_info.cpu.benchmarks.flops_u8   = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint8)
-    device_info.cpu.benchmarks.flops_i32  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int32)
-    device_info.cpu.benchmarks.flops_i16  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int16)
-    device_info.cpu.benchmarks.flops_i8   = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int8)
+    device_info.cpu.benchmarks.flops_f64  = _mlx_gemm_benchmark( mx.cpu, N, M, K, 5, 100, mx.float64, debug)
+    device_info.cpu.benchmarks.flops_f32  = _mlx_gemm_benchmark( mx.cpu, N, M, K, 5, 100, mx.float32, debug)
+    device_info.cpu.benchmarks.flops_fp16 = _mlx_gemm_benchmark( mx.cpu, N, M, K, 5, 100, mx.float16, debug)
+    device_info.cpu.benchmarks.flops_bf16 = _mlx_gemm_benchmark( mx.cpu, N, M, K, 5, 100, mx.bfloat16, debug)
+    device_info.cpu.benchmarks.flops_u32  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint32, debug)
+    device_info.cpu.benchmarks.flops_u16  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint16, debug)
+    device_info.cpu.benchmarks.flops_u8   = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint8, debug)
+    device_info.cpu.benchmarks.flops_i32  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int32, debug)
+    device_info.cpu.benchmarks.flops_i16  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int16, debug)
+    device_info.cpu.benchmarks.flops_i8   = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int8, debug)
 
 # consumer Nvidia GPUs don't support f64
-def run_gpu_benchmarks(device_info, n_embd: int):
+def run_gpu_benchmarks(device_info, n_embd: int, debug):
     M = N = K = n_embd if n_embd >= 4096 else 4096
-    device_info.gpu.benchmarks.flops_f64  = _mlx_gemm_benchmark(mx.gpu, N,M,K, 3, 10, mx.float64)
-    device_info.gpu.benchmarks.flops_f32  = _mlx_gemm_benchmark( mx.gpu, N, M, K, 20, 60, mx.float32)
-    device_info.gpu.benchmarks.flops_fp16 = _mlx_gemm_benchmark( mx.gpu, N, M, K, 20, 60, mx.float16)
-    device_info.gpu.benchmarks.flops_bf16 = _mlx_gemm_benchmark( mx.gpu, N, M, K, 20, 60, mx.bfloat16)
-    device_info.gpu.benchmarks.flops_u32  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint32)
-    device_info.gpu.benchmarks.flops_u16  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint16)
-    device_info.gpu.benchmarks.flops_u8   = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint8)
-    device_info.gpu.benchmarks.flops_i32  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int32)
-    device_info.gpu.benchmarks.flops_i16  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int16)
-    device_info.gpu.benchmarks.flops_i8   = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int8)
+    device_info.gpu.benchmarks.flops_f64  = _mlx_gemm_benchmark(mx.gpu, N,M,K, 3, 10, mx.float64, debug)
+    device_info.gpu.benchmarks.flops_f32  = _mlx_gemm_benchmark( mx.gpu, N, M, K, 20, 60, mx.float32, debug)
+    device_info.gpu.benchmarks.flops_fp16 = _mlx_gemm_benchmark( mx.gpu, N, M, K, 20, 60, mx.float16, debug)
+    device_info.gpu.benchmarks.flops_bf16 = _mlx_gemm_benchmark( mx.gpu, N, M, K, 20, 60, mx.bfloat16, debug)
+    device_info.gpu.benchmarks.flops_u32  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint32, debug)
+    device_info.gpu.benchmarks.flops_u16  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint16, debug)
+    device_info.gpu.benchmarks.flops_u8   = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint8, debug)
+    device_info.gpu.benchmarks.flops_i32  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int32, debug)
+    device_info.gpu.benchmarks.flops_i16  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int16, debug)
+    device_info.gpu.benchmarks.flops_i8   = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int8, debug)
 
 
-def bench_cpu_to_gpu_transfers(di, n_embd):
+def bench(fn, stream, name="", warmup=3, iters=10, debug=0):
+    times = []
+    for _ in range(warmup):
+        mx.synchronize()
+        mx.eval(fn())
+        mx.synchronize()
+    for _ in range(iters):
+        mx.synchronize()
+        t0 = time.perf_counter()
+        mx.eval(fn())
+        times.append(time.perf_counter() - t0)
+        mx.synchronize()
+
+    if debug >= 1 and len(times) > 2:
+        mean = stats.mean(times) * 1000 
+        std  = stats.stdev(times) * 1000
+        p50  = stats.median(times) * 1000
+        p95  = stats.quantiles(times, n=iters)[iters-5] * 1000
+        p99  = stats.quantiles(times, n=iters)[iters-2] * 1000
+
+        print(f"{name:10}: {iters} runs [ms]: avg {mean:5.3f} ± {std:.3f}  "
+              f" p50={p50:.3f}  p95={p95:.3f}  p99={p99:.3f}")
+
+    return stats.median(times)
+
+def bench_cpu_to_gpu_transfers(di, n_embd, debug):
     if _has_cupy:  # Benchmark VRAM <-> RAM through CUDA
         N = n_embd if n_embd >= 4096 else 4096
         bytes_total = N * N * cp.dtype(cp.float32).itemsize
         shape = N * N 
-
-        def bench(fn, stream, name, warmup=3, iter=10):
-            times = []
-            for _ in range(warmup):
-                fn()
-            for _ in range(iter):
-                t0 = cp.cuda.Event()
-                t1 = cp.cuda.Event()
-                with stream:
-                    t0.record()
-                    fn()
-                    t1.record()
-                t1.synchronize()
-                times.append(cp.cuda.get_elapsed_time(t0, t1) / 1000.0)  # seconds
-
-            if DEBUG:
-                mean = stats.mean(times) * 1000 
-                std  = stats.stdev(times) * 1000
-                p50  = stats.median(times) * 1000
-                p95  = stats.quantiles(times, n=iter)[iter-5] * 1000
-                p99  = stats.quantiles(times, n=iter)[iter-2] * 1000
-
-                print(f"{name}: {iter} runs [ms]: avg {mean:5.3f} ± {std:.3f}  "
-                      f" p50={p50:.3f}  p95={p95:.3f}  p99={p99:.3f}")
-
-            return stats.median(times)
 
         d = cp.empty(shape, dtype=cp.float32)
         h_in = cp.cuda.alloc_pinned_memory(bytes_total)
@@ -239,12 +236,12 @@ def bench_cpu_to_gpu_transfers(di, n_embd):
                     sec_gpu2cpu.ptr,
                 )
 
-        di.gpu.memory.read_bw = bytes_total / bench(cpu_to_gpu, sec_cpu2gpu, "cpu_to_gpu")  # bytes/s
-        di.gpu.memory.write_bw = bytes_total / bench(gpu_to_cpu, sec_gpu2cpu, "gpu_to_cpu")  # bytes/s
-        di.gpu.memory.read_write_bw = ( 2 * bytes_total / bench(read_write, sec_rw, "read_write"))  # bytes/s
+        di.gpu.memory.read_bw = bytes_total / bench(cpu_to_gpu, sec_cpu2gpu, "cpu_to_gpu", debug=debug)  # bytes/s
+        di.gpu.memory.write_bw = bytes_total / bench(gpu_to_cpu, sec_gpu2cpu, "gpu_to_cpu", debug=debug)  # bytes/s
+        di.gpu.memory.read_write_bw = ( 2 * bytes_total / bench(read_write, sec_rw, "read_write", debug=debug))  # bytes/s
 
 
-def bench_disk_mainfs(di, iter=10, reads=200):
+def bench_disk_mainfs(di, iter=10, reads=200, debug=0):
     M = 2 << 8
     BLOCK = 1024  # Number of bytes accessed per read, 256 f32
     A = mx.random.normal((M, M, M), dtype=mx.float32)  # ~536MB
@@ -304,33 +301,8 @@ def bench_disk_mainfs(di, iter=10, reads=200):
     di.disk.random = (reads * BLOCK) / rd_time  # bytes/s
 
 
-def bench(fn, name="", warmup=3, iters=10):
-    times = []
-    for _ in range(warmup):
-        mx.synchronize()
-        mx.eval(fn())
-        mx.synchronize()
-    for _ in range(iters):
-        mx.synchronize()
-        t0 = time.perf_counter()
-        mx.eval(fn())
-        times.append(time.perf_counter() - t0)
-        mx.synchronize()
 
-    if DEBUG and len(times) > 2:
-        mean = stats.mean(times) * 1000 
-        std  = stats.stdev(times) * 1000
-        p50  = stats.median(times) * 1000
-        p95  = stats.quantiles(times, n=iters)[iters-5] * 1000
-        p99  = stats.quantiles(times, n=iters)[iters-2] * 1000
-
-        print(f"{name:10}: {iters} runs [ms]: avg {mean:5.3f} ± {std:.3f}  "
-              f" p50={p50:.3f}  p95={p95:.3f}  p99={p99:.3f}")
-
-    return stats.median(times)
-
-
-def get_sysmem_info(device_info, config):
+def get_sysmem_info(device_info, config, debug):
     import psutil, numpy as np
 
     sm = psutil.swap_memory()
@@ -348,7 +320,7 @@ def get_sysmem_info(device_info, config):
     bytes_A = M * M * M * 4
 
     device_info.memory.cpu_read_cold_bw = bytes_A / bench(
-        lambda: mx.max(A), "cpy_read_cold_bw", 0, 1
+        lambda: mx.max(A), mx.cpu, "cpy_read_cold_bw", 0, 1, debug
     )  # bytes/s
 
     t = 4
@@ -360,22 +332,22 @@ def get_sysmem_info(device_info, config):
 
     # device_info.memory.cpu_read_warm_bw = bytes_A/bench(lambda: parallel_read_hot())  # bytes/s
     device_info.memory.cpu_read_warm_bw = bytes_A / bench(
-        lambda: mx.abs(A), "cpu_read_warm_bw", 5, 10
+        lambda: mx.abs(A), mx.cpu, "cpu_read_warm_bw", 5, 10, debug
     )  # bytes/s
 
     device_info.memory.cpu_write_cold_bw = bytes_A / bench(
-        lambda: mx.full((M*M*M), 23.4, dtype=mx.float32), "cpu_write_cold_bw", 0, 1
+        lambda: mx.full((M*M*M), 23.4, dtype=mx.float32), mx.cpu, "cpu_write_cold_bw", 0, 1, debug
     )
 
     device_info.memory.cpu_write_warm_bw = bytes_A / bench(
-        lambda: mx.full((M*M*M), 351.23, dtype=mx.float32), "cpu_write_warm_bw", 5, 10
+        lambda: mx.full((M*M*M), 351.23, dtype=mx.float32), mx.cpu, "cpu_write_warm_bw", 5, 10, debug
     )
 
-    device_info.memory.memcpy_delay = 1000 * bench(lambda: mx.eval(mx.array(B)), "memcpy_delay")
+    device_info.memory.memcpy_delay = 1000 * bench(lambda: mx.eval(mx.array(B)), mx.cpu, "memcpy_delay", debug=debug)
 
 
 # TODO: Maybee transfer this to the Metal package
-def metal_get_memory_info(device_info):
+def metal_get_memory_info(device_info, debug):
     unified_mem = platform.machine() == "arm64"
     vm = psutil.virtual_memory()
     if unified_mem:
@@ -388,19 +360,19 @@ def metal_get_memory_info(device_info):
 
 
 # Get memory information
-def cuda_get_memory_info(di):
+def cuda_get_memory_info(di, debug):
     if _has_cupy:
         free, total = cp.cuda.runtime.memGetInfo()
         di.gpu.memory.total = total  # bytes
         di.gpu.memory.free = free  # bytes
 
 
-def cuda_bench_mem_to_compute(di):
+def cuda_bench_mem_to_compute(di, debug):
     pass
 
 
 # Best aproximation, still short of ~100GB/s expected
-def metal_bench_mem_to_compute(di):
+def metal_bench_mem_to_compute(di, debug):
     M = 512 
     s_gpu = mx.new_stream(mx.gpu)
 
@@ -415,7 +387,7 @@ def metal_bench_mem_to_compute(di):
         out = mx.sum(A[i*M:(i+1)*M])
         mx.eval(out)
 
-    sec = bench(mem_load, "vram_to_compute", 30, 100)
+    sec = bench(mem_load, mx.gpu, "vram_to_compute", 30, 100, debug)
     bw_cpy = (2 * M * M * M * 4) / sec
     bw_ram_read = bw_cpy 
     di.gpu.memory.vram_to_compute = bw_ram_read  # bytes/s
@@ -425,23 +397,23 @@ def metal_bench_mem_to_compute(di):
 
 
 # Aggregate info on the current system
-def profile(config) -> DeviceInfo:
+def profile(config, debug) -> DeviceInfo:
     di = DeviceInfo()
     get_os(di)
-    fill_cpu_info(di)
-    run_cpu_benchmarks(di, config.hidden_size)
-    run_gpu_benchmarks(di, config.hidden_size)
+    fill_cpu_info(di, debug)
+    run_cpu_benchmarks(di, config.hidden_size, debug)
+    run_gpu_benchmarks(di, config.hidden_size, debug)
     if platform.system() == "Darwin":
-        metal_bench_mem_to_compute(di)
-        metal_get_memory_info(di)
+        metal_bench_mem_to_compute(di, debug)
+        metal_get_memory_info(di, debug)
         di.gpu.name = "metal"
     else:
-        cuda_bench_mem_to_compute(di)
-        cuda_get_memory_info(di)
+        cuda_bench_mem_to_compute(di, debug)
+        cuda_get_memory_info(di, debug)
         di.gpu.name = "cuda"
-    bench_cpu_to_gpu_transfers(di, config.hidden_size)
-    bench_disk_mainfs(di)
-    get_sysmem_info(di, config)
+    bench_cpu_to_gpu_transfers(di, config.hidden_size, debug)
+    bench_disk_mainfs(di, debug=debug)
+    get_sysmem_info(di, config, debug)
     return di
 
 
@@ -534,8 +506,8 @@ class DeviceProfileInfo:
 
 
 # Get device information in solver variable names
-def profile_device(config) -> DeviceProfileInfo:
-    device_info = profile(config)
+def profile_device(config, debug) -> DeviceProfileInfo:
+    device_info = profile(config, debug)
     ret = DeviceProfileInfo()
 
     # Set device name (hostname or identifier)
@@ -650,7 +622,7 @@ def profile_device(config) -> DeviceProfileInfo:
 
 # Estimate FLOPs for Model
 def profile_model(
-    model: nn.Module, config, B: int = 1, L: int = 4096, config_dict: Dict = None
+    model: nn.Module, config, B: int = 1, L: int = 4096, config_dict: Dict = None, debug=0
 ):
 
     dtype = None
@@ -671,7 +643,7 @@ def profile_model(
         else:
             raise ValueError("Unable to get quantization or dtype information from  HF config.")
 
-    model_info = _profile_model(model, config, B, L, 16, bits, group_size)
+    model_info = _profile_model(model, config, B, L, 16, bits, group_size, debug)
     ret = ModelProfileInfo()
 
     # Per-layer metrics (existing)
