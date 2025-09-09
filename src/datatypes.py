@@ -40,20 +40,32 @@ class Stat:
     mean: float = 0.0
     stddev: float = 0.0
 
+@dataclass
+class Batches:
+    b_1:   float = 0.0
+    b_2:   float = 0.0
+    b_4:   float = 0.0
+    b_8:   float = 0.0
+    b_16:  float = 0.0
+    b_32:  float = 0.0
+    b_64:  float = 0.0
+    b_128: float = 0.0
+    b_256: float = 0.0
+    b_512: float = 0.0
 
 @dataclass
 class Benchmarks:
-    flops_f64: float = 0.0
-    flops_f32: float = 0.0
-    flops_tf32: float = 0.0
-    flops_fp16: float = 0.0
-    flops_bf16: float = 0.0
-    flops_u32: float = 0.0
-    flops_u16: float = 0.0
-    flops_u8: float = 0.0
-    flops_i32: float = 0.0
-    flops_i16: float = 0.0
-    flops_i8: float = 0.0
+    f64:  Batches = field(default_factory=Batches) 
+    f32:  Batches = field(default_factory=Batches) 
+    tf32: Batches = field(default_factory=Batches) 
+    fp16: Batches = field(default_factory=Batches) 
+    bf16: Batches = field(default_factory=Batches) 
+    u32:  Batches = field(default_factory=Batches) 
+    u16:  Batches = field(default_factory=Batches) 
+    u8:   Batches = field(default_factory=Batches) 
+    i32:  Batches = field(default_factory=Batches) 
+    i16:  Batches = field(default_factory=Batches) 
+    i8:   Batches = field(default_factory=Batches) 
 
 
 @dataclass

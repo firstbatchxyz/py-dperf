@@ -86,30 +86,29 @@ def fill_cpu_info(di, debug):
         di.cpu.model = uname.machine or ""
 
 
-# Dense gemm benchmark
-def _mlx_gemm_benchmark(
-    device, N, M, K, warmup: int = 3, iters: int = 10, dtype=mx.float32, debug=0
-) -> float:
+# Only the A tensor is batched, B is shared. Emulating inference 
+# Note: take tensors as argument to cut the cost of initializing them, all tests are hot in memory anyway
+def _mlx_batched_gemm_benchmark(device, B, N, M, K, warmup = 3, iters = 10, dtype=mx.float16, debug=0):
     try:
         mx.set_default_device(device)
-        A = mx.random.normal((M, K), dtype=dtype)
-        B = mx.random.normal((K, N), dtype=dtype)
+        a = mx.random.normal((B, M, K), dtype=dtype)
+        b = mx.random.normal((K, N), dtype=dtype)
 
         for _ in range(warmup):
-            C = mx.matmul(A, B)
-            mx.eval(C)
+            c = mx.matmul(a, b)
+            mx.eval(c)
         mx.synchronize()
 
         times = []
         for _ in range(iters):
             t0 = time.perf_counter()
-            C = mx.matmul(A, B)
-            mx.eval(C)
+            c = mx.matmul(a, b)
+            mx.eval(c)
             mx.synchronize()
             times.append(time.perf_counter() - t0)
 
         median = stats.median(times)
-        flop = 2.0 * N * M * K
+        flop = 2.0 * B * N * M * K
 
         if debug >= 1:
             mean = stats.mean(times) * 1000 
@@ -119,42 +118,40 @@ def _mlx_gemm_benchmark(
             p99  = stats.quantiles(times, n=iters)[iters-2] * 1000
             mean_gflop = stats.mean([ (flop/t)*1e-9 for t in times])
 
-            print(f"gemm {N}x{M}@{K}x{N} ({dtype}, {device})")
-            print(f"    {iters} runs [ms]: avg {mean:5.3f} ± {std:.3f}  "
-                  f" p50={p50:.3f}  p95={p95:.3f}  p99={p99:.3f}")
+            print(f"gemm {B}x{N}x{M} @ {K}x{N} ({flop*1e-9:.2f} GFLOPs) ({dtype}, {device})")
+            print(f"    {iters} runs [ms]: avg {mean:<8.2f} ± {std:<5.2f}(std)  "
+                  f" p50={p50:<8.2f}  p95={p95:<8.2f}  p99={p99:<8.2f}")
             print(f"    [GFLOP/s]: {mean_gflop:.3f}")
-        return flop / median  # Return FLOPS, not GFLOPS
+        return flop / median  # Return FLOPS
     except:
         return 0.0
 
 # MLX doesn't support multiprocessing for these ops, only separate streams with one op/stream
 # Int datatype not supported on either device
-def run_cpu_benchmarks(device_info, n_embd: int, debug):
+def run_cpu_benchmarks(device_info, n_embd: int, max_batch_exp: int, debug):
     M = N = K = int(n_embd/8 if n_embd >= 4096 else 4096/8) # Smaller size on CPU
-    device_info.cpu.benchmarks.flops_f64  = _mlx_gemm_benchmark( mx.cpu, N, M, K, 5, 100, mx.float64, debug)
-    device_info.cpu.benchmarks.flops_f32  = _mlx_gemm_benchmark( mx.cpu, N, M, K, 5, 100, mx.float32, debug)
-    device_info.cpu.benchmarks.flops_fp16 = _mlx_gemm_benchmark( mx.cpu, N, M, K, 5, 100, mx.float16, debug)
-    device_info.cpu.benchmarks.flops_bf16 = _mlx_gemm_benchmark( mx.cpu, N, M, K, 5, 100, mx.bfloat16, debug)
-    device_info.cpu.benchmarks.flops_u32  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint32, debug)
-    device_info.cpu.benchmarks.flops_u16  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint16, debug)
-    device_info.cpu.benchmarks.flops_u8   = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint8, debug)
-    device_info.cpu.benchmarks.flops_i32  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int32, debug)
-    device_info.cpu.benchmarks.flops_i16  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int16, debug)
-    device_info.cpu.benchmarks.flops_i8   = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int8, debug)
+    dtypes = [mx.float32, mx.float16, mx.bfloat16, mx.uint32]
+    tags   = [ "f32", "fp16", "bf16", "u32" ]
+    b_tags = [ f"b_{2**n}" for n in range(9) ]
+
+    for dtype, tag in zip(dtypes, tags):
+        for B in range(max_batch_exp): 
+            di_dtype_field = getattr(device_info.cpu.benchmarks, tag)
+            setattr(di_dtype_field, b_tags[B],  _mlx_batched_gemm_benchmark(mx.cpu, 2**B, N, M, K, 10, 60, dtype, debug))
+
 
 # consumer Nvidia GPUs don't support f64
-def run_gpu_benchmarks(device_info, n_embd: int, debug):
+def run_gpu_benchmarks(device_info, n_embd: int, max_batch_exp: int, debug):
     M = N = K = n_embd if n_embd >= 4096 else 4096
-    device_info.gpu.benchmarks.flops_f64  = _mlx_gemm_benchmark(mx.gpu, N,M,K, 3, 10, mx.float64, debug)
-    device_info.gpu.benchmarks.flops_f32  = _mlx_gemm_benchmark( mx.gpu, N, M, K, 20, 60, mx.float32, debug)
-    device_info.gpu.benchmarks.flops_fp16 = _mlx_gemm_benchmark( mx.gpu, N, M, K, 20, 60, mx.float16, debug)
-    device_info.gpu.benchmarks.flops_bf16 = _mlx_gemm_benchmark( mx.gpu, N, M, K, 20, 60, mx.bfloat16, debug)
-    device_info.gpu.benchmarks.flops_u32  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint32, debug)
-    device_info.gpu.benchmarks.flops_u16  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint16, debug)
-    device_info.gpu.benchmarks.flops_u8   = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.uint8, debug)
-    device_info.gpu.benchmarks.flops_i32  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int32, debug)
-    device_info.gpu.benchmarks.flops_i16  = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int16, debug)
-    device_info.gpu.benchmarks.flops_i8   = _mlx_gemm_benchmark(mx.cpu, N,M,K, 3, 10, mx.int8, debug)
+    dtypes = [mx.float32, mx.float16, mx.bfloat16, mx.uint32]
+    tags   = [ "f32", "fp16", "bf16", "u32" ]
+    b_tags = [ f"b_{2**n}" for n in range(9) ]
+
+    for dtype, tag in zip(dtypes, tags):
+        for B in range(max_batch_exp): 
+            di_dtype_field = getattr(device_info.cpu.benchmarks, tag)
+            setattr(di_dtype_field, b_tags[B], _mlx_batched_gemm_benchmark(mx.gpu, 2**B, N, M, K, 5, 10, dtype, debug))
+
 
 
 def bench(fn, stream, name="", warmup=3, iters=10, debug=0):
@@ -397,12 +394,12 @@ def metal_bench_mem_to_compute(di, debug):
 
 
 # Aggregate info on the current system
-def profile(config, debug) -> DeviceInfo:
+def profile(config, max_batch_exp, debug) -> DeviceInfo:
     di = DeviceInfo()
     get_os(di)
     fill_cpu_info(di, debug)
-    run_cpu_benchmarks(di, config.hidden_size, debug)
-    run_gpu_benchmarks(di, config.hidden_size, debug)
+    run_cpu_benchmarks(di, config.hidden_size, max_batch_exp, debug)
+    run_gpu_benchmarks(di, config.hidden_size, max_batch_exp, debug)
     if platform.system() == "Darwin":
         metal_bench_mem_to_compute(di, debug)
         metal_get_memory_info(di, debug)
@@ -507,7 +504,10 @@ class DeviceProfileInfo:
 
 # Get device information in solver variable names
 def profile_device(config, debug) -> DeviceProfileInfo:
-    device_info = profile(config, debug)
+
+    max_batch_exp = 6 # 32
+
+    device_info = profile(config, max_batch_exp, debug)
     ret = DeviceProfileInfo()
 
     # Set device name (hostname or identifier)
@@ -541,32 +541,41 @@ def profile_device(config, debug) -> DeviceProfileInfo:
     ret.is_head = True
 
     # CPU throughput tables (FLOPS)
-    ret.scpu = {
-        "f64": device_info.cpu.benchmarks.flops_f64,
-        "f32": device_info.cpu.benchmarks.flops_f32,
-        "fp16": device_info.cpu.benchmarks.flops_fp16,
-        "bf16": device_info.cpu.benchmarks.flops_bf16,
-    }
+    scpu_dtypes = ["f32", "fp16", "bf16"]
+    scpu_batches = [f"b_{2**n}" for n in range(max_batch_exp)]
+    ret.scpu = {}
+    for type in scpu_dtypes:
+        ret.scpu.update({type: {}})
+        di_type = getattr(device_info.cpu.benchmarks, type)
+        for b in scpu_batches:
+            _val = ret.scpu.get(type)
+            _val.update({b: getattr(di_type, b)})
+            ret.scpu.update({type: _val})
+
 
     # CPU register loading throughput (bytes/s) - use warm bandwidth
     ret.T_cpu = device_info.memory.cpu_read_warm_bw  # Already in bytes/s
 
     # GPU throughput tables (FLOPS) - separate for CUDA and Metal
+    sgpu_dtypes = ["f32", "fp16", "bf16"]
+    sgpu_batches = [f"b_{2**n}" for n in range(max_batch_exp)]
+    _field = {}
+    for type in sgpu_dtypes:
+        _field.update({type: {}})
+        di_type = getattr(device_info.cpu.benchmarks, type)
+        for b in sgpu_batches:
+            _val = _field.get(type)
+            _val.update({b: getattr(di_type, b)})
+            _field.update({type: _val})
+
+    # CUDA memory throughput (bytes/s)
     if ret.has_cuda:
-        ret.sgpu_cuda = {
-            "f32": device_info.gpu.benchmarks.flops_f32,
-            "fp16": device_info.gpu.benchmarks.flops_fp16,
-            "bf16": device_info.gpu.benchmarks.flops_bf16,
-        }
-        # CUDA memory throughput (bytes/s)
+        ret.sgpu_cuda = _field
         ret.T_cuda = device_info.gpu.memory.vram_to_compute  # Already in bytes/s
+
+    # Metal memory throughput (bytes/s)
     elif ret.has_metal:
-        ret.sgpu_metal = {
-            "f32": device_info.gpu.benchmarks.flops_f32,
-            "fp16": device_info.gpu.benchmarks.flops_fp16,
-            "bf16": device_info.gpu.benchmarks.flops_bf16,
-        }
-        # Metal memory throughput (bytes/s)
+        ret.sgpu_metal = _field
         ret.T_metal = device_info.gpu.memory.vram_to_compute  # Already in bytes/s
 
     # KV-copy times (sec) - time for a standard KV operation
