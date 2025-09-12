@@ -5,12 +5,12 @@ description = "Cross-platform device profiler for ML models in Python"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "huggingface-hub[cli]==0.24.7",
-    "psutil>=7.0.0",
-    "py-cpuinfo>=9.0.0",
-    "numpy>=1.24.0",
-    "mlx==0.28.0", 
-    "mlx-lm==0.25.0"
+  "huggingface-hub[cli]==0.24.0",
+  "psutil>=7.0.0",
+  "py-cpuinfo>=9.0.0",
+  "numpy>=1.24.0",
+  "mlx==0.28.0",
+  "mlx-lm==0.25.0",
 ]
 
 [project.optional-dependencies]

@@ -14,3 +14,6 @@ uv.lock
 .python-version
 play.py
 outputs
+
+build
+*.egg-info
