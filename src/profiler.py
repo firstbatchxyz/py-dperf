@@ -503,9 +503,7 @@ class DeviceProfileInfo:
 
 
 # Get device information in solver variable names
-def profile_device(config, debug) -> DeviceProfileInfo:
-
-    max_batch_exp = 6 # 32
+def profile_device(config, debug, max_batch_exp=6) -> DeviceProfileInfo:
 
     device_info = profile(config, max_batch_exp, debug)
     ret = DeviceProfileInfo()

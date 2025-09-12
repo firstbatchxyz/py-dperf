@@ -48,6 +48,13 @@ if __name__ == "__main__":
     )
     parser.add_argument("-b", "--batch", dest="B", type=int, help="Batch size")
     parser.add_argument("-s", "--sequence", dest="L", type=int, help="Sequence length")
+    parser.add_argument(
+        "--max-batch-exp",
+        dest="max_batch_exp",
+        default=6,
+        type=int,
+        help="Maximum batch exponent for device profiling (default: 6, which is 2^6=64)"
+    )
     args = parser.parse_args()
 
     # Both device and model require model config information
@@ -106,11 +113,11 @@ if __name__ == "__main__":
 
     if args.ret == "device":
         if args.output_path is None:
-            ret = profile_device(config_obj, args.debug_lvl)
+            ret = profile_device(config_obj, args.debug_lvl, args.max_batch_exp)
             pprint.pprint(ret)
             sys.exit(1)
         with open(args.output_path, "w") as f:
-            ret = profile_device(config_obj, args.debug_lvl)
+            ret = profile_device(config_obj, args.debug_lvl, args.max_batch_exp)
             if ret is not None:
                 f.write(ret.json())
             else:
